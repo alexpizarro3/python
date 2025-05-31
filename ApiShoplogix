@@ -1,1 +1,74 @@
+import pandas as pd
+import requests
+import pyodbc
+from datetime import datetime, timedelta
+
+# ----------------------------
+# FUNCIONES PARA FECHAS
+# ----------------------------
+def get_date_range():
+    end_date = datetime.today()
+    start_date = end_date - timedelta(days=6)
+    return start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d')
+
+start_date, end_date = get_date_range()
+
+# ----------------------------
+# CONFIGURACIÓN API SHOPLOGIX
+# ----------------------------
+headers = {
+    "Authorization": "Bearer TU_TOKEN_API",
+    "Content-Type": "application/json"
+}
+
+url_base = "https://api.shoplogix.com/data/"
+url_tiempos = f"{url_base}detalleTiemposTpm?start={start_date}&end={end_date}"
+url_kpis = f"{url_base}kpisDesempeno?start={start_date}&end={end_date}"
+
+# ----------------------------
+# CONSULTA DE ENDPOINTS
+# ----------------------------
+resp_tiempos = requests.get(url_tiempos, headers=headers)
+resp_kpis = requests.get(url_kpis, headers=headers)
+
+data_tiempos = resp_tiempos.json()
+data_kpis = resp_kpis.json()
+
+# ----------------------------
+# CONVERSIÓN A DATAFRAME
+# ----------------------------
+df_tiempos = pd.json_normalize(data_tiempos)
+df_kpis = pd.json_normalize(data_kpis)
+
+# ----------------------------
+# EXPORTAR CSV LOCAL (opcional)
+# ----------------------------
+df_tiempos.to_csv("detalle_tiempos.csv", index=False)
+df_kpis.to_csv("kpis_desempeno.csv", index=False)
+
+# ----------------------------
+# CARGA A SQL SERVER
+# ----------------------------
+conn_str = (
+    "DRIVER={ODBC Driver 17 for SQL Server};"
+    "SERVER=localhost;"
+    "DATABASE=MiBase;"
+    "UID=usuario;"
+    "PWD=contraseña;"
+)
+conn = pyodbc.connect(conn_str)
+
+# Función para insertar a tabla (usando fast_executemany si fuera masivo)
+def insert_to_sql(df, table_name):
+    cursor = conn.cursor()
+    for _, row in df.iterrows():
+        placeholders = ", ".join(["?"] * len(row))
+        sql = f"INSERT INTO {table_name} VALUES ({placeholders})"
+        cursor.execute(sql, *row)
+    conn.commit()
+
+insert_to_sql(df_tiempos, "TDetalleTiemposTPM")
+insert_to_sql(df_kpis, "TKpisDesempeño")
+
+print("✅ Datos cargados exitosamente en SQL Server.")
 
