@@ -1,1 +1,62 @@
+import pandas as pd
+import pyodbc
+import os
+import gspread
+from google.oauth2.service_account import Credentials
+
+# ----------------------
+# Conexión SQL Server
+# ----------------------
+conn_str = (
+    "DRIVER={ODBC Driver 17 for SQL Server};"
+    "SERVER=localhost;"
+    "DATABASE=mi_base_datos;"
+    "UID=usuario_sql;"
+    "PWD=mi_contraseña;"
+)
+conn = pyodbc.connect(conn_str)
+
+# ----------------------
+# Consulta de tablas
+# ----------------------
+df_ventas = pd.read_sql("SELECT * FROM tabla_ventas", conn)
+df_clientes = pd.read_sql("SELECT * FROM tabla_clientes", conn)
+
+# ----------------------
+# Transformación con Pandas
+# ----------------------
+df_ventas["total"] = df_ventas["cantidad"] * df_ventas["precio_unitario"]
+df_final = pd.merge(df_ventas, df_clientes, on="cliente_id", how="left")
+
+# ----------------------
+# Guardar CSV en disco
+# ----------------------
+output_path = r"C:\archivos_etl\resultado.csv"
+os.makedirs(os.path.dirname(output_path), exist_ok=True)
+df_final.to_csv(output_path, index=False)
+print(f"✅ CSV guardado en: {output_path}")
+
+# ----------------------
+# Subir CSV a Google Sheets
+# ----------------------
+
+# Ruta del JSON de credenciales
+SERVICE_ACCOUNT_FILE = 'credenciales_google.json'  # Debes tener este archivo
+
+SCOPES = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+
+creds = Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
+gc = gspread.authorize(creds)
+
+# Crea una hoja nueva en Google Drive
+sh = gc.create("Resultado ETL - SQL + Python")
+
+# Comparte con tu correo de Google
+sh.share('tucorreo@gmail.com', perm_type='user', role='writer')
+
+# Abre la hoja y sube los datos
+worksheet = sh.get_worksheet(0)
+worksheet.update([df_final.columns.values.tolist()] + df_final.values.tolist())
+
+print("✅ Datos subidos a Google Sheets correctamente.")
 
